@@ -1,430 +1,150 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Drone Survey Cost Estimator (Offline-ready)</title>
-
-  <!-- Local styles (MUST live next to this HTML file) -->
-  <link rel="stylesheet" href="leaflet.css" />
-  <link rel="stylesheet" href="leaflet.draw.css" />
-
-  <style>
-    :root {
-      --bg: #0f172a;
-      --panel: #111827;
-      --text: #e5e7eb;
-      --muted: #9ca3af;
-      --accent: #22d3ee;
-      --accent-2: #34d399;
-      --danger: #ef4444;
-      --border: #1f2937;
-    }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif; }
-    .app { display: grid; grid-template-columns: 380px 1fr; height: 100%; }
-    .panel {
-      background: var(--panel);
-      border-right: 1px solid var(--border);
-      padding: 18px;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      gap: 16px;
-    }
-    h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: .25px; }
-    .sub { color: var(--muted); font-size: 12px; }
-    .box {
-      background: #0b1220;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-    }
-    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-    input[type="number"], select {
-      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
-      background: #0a0f1a; color: var(--text);
-      outline: none;
-    }
-    input[type="number"]:focus, select:focus { border-color: #1f9eed; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-    .muted { color: var(--muted); font-size: 12px; }
-    .totals {
-      display: grid; gap: 8px;
-    }
-    .totals .line {
-      display: flex; align-items: center; justify-content: space-between;
-      font-size: 14px;
-    }
-    .totals .line .k { color: var(--muted); }
-    .totals .line .v { font-weight: 600; }
-    .totals .line.total { border-top: 1px dashed var(--border); padding-top: 8px; margin-top: 6px; }
-    .pill { display: inline-flex; align-items: center; gap: 8px; background: #0a0f1a; border: 1px solid var(--border); padding: 6px 8px; border-radius: 999px; font-size: 12px; color: var(--muted); }
-    .pill b { color: var(--text); }
-    .actions { display: flex; gap: 8px; }
-    button {
-      appearance: none; border: 1px solid var(--border); background: #0a0f1a; color: var(--text);
-      padding: 10px 12px; border-radius: 8px; cursor: pointer;
-      transition: border-color .15s, transform .02s;
-    }
-    button:hover { border-color: #1f9eed; }
-    button:active { transform: translateY(1px); }
-    .primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: #001019; font-weight: 700; }
-    .danger { border-color: #4c1d1d; color: #fecaca; background: #140d0d; }
-    .copy { border-color: #1f2937; color: #a7f3d0; background: #06211a; }
-    .warn { color: #fde68a; font-size: 12px; }
-    #map { width: 100%; height: 100%; }
-    .metric { color: #a7f3d0; }
-    .price { color: #fef08a; }
-    .small { font-size: 11px; }
-    .disclaimer { color: var(--muted); font-size: 11px; }
-    .footer { display: grid; gap: 6px; }
-    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    .chip { background: #0b1220; border: 1px solid var(--border); padding: 4px 8px; border-radius: 999px; font-size: 12px; color: var(--muted); }
-    .ok { color: #86efac; }
-    .bad { color: #fca5a5; }
-  </style>
+<meta charset="utf-8" />
+<title>Drone Survey Estimator with Postcode Search</title>
+<link rel="stylesheet" href="leaflet.css" />
+<link rel="stylesheet" href="leaflet.draw.css" />
+<!-- Mapbox GL CSS for 3D view -->
+<link rel="stylesheet" href="https://api.tiles.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.css" />
+<style>
+  body, html {
+    height: 100%;
+    margin: 0;
+  }
+  #map {
+    height: calc(100vh - 50px);
+    width: 100%;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: #f7f7f7;
+    border-bottom: 1px solid #ccc;
+  }
+  .controls input {
+    padding: 4px 8px;
+  }
+  .controls button {
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  #message {
+    color: red;
+    font-size: 0.9em;
+  }
+</style>
 </head>
 <body>
-  <div class="app">
-    <aside class="panel">
-      <div>
-        <h1>Drone Survey Cost Estimator</h1>
-        <div class="sub">Draw your survey area on the map. Calculations update automatically.</div>
-      </div>
+<div class="controls">
+  <input type="text" id="postcode-input" placeholder="Enter UK postcode" />
+  <button id="postcode-search">Search</button>
+  <span id="message"></span>
+</div>
+<div id="map"></div>
+<script src="leaflet.js"></script>
+<script src="leaflet.draw.js"></script>
+<script src="turf.min.js"></script>
+<!-- Mapbox GL JS and Leaflet plugin for 3D (only works if you provide a valid token below) -->
+<script src="https://api.tiles.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.js"></script>
+<script src="https://unpkg.com/mapbox-gl-leaflet@0.0.6/leaflet-mapbox-gl.js"></script>
+<script>
+  // Base layers
+  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  });
+  const satellite = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Imagery &copy; Esri & contributors'
+  });
+  // Mapbox 3D layer (requires your own Mapbox access token). Replace ACCESS_TOKEN below.
+  const mapbox3D = L.mapboxGL({
+    accessToken: 'YOUR_MAPBOX_ACCESS_TOKEN',
+    style: 'mapbox://styles/mapbox/satellite-streets-v12',
+    interactive: true,
+    pitch: 60,
+    bearing: -60
+  });
 
-      <div class="box" id="controls">
-        <div class="row">
-          <div>
-            <label>Rate (per hectare)</label>
-            <input id="rate" type="number" min="0" step="1" value="180" />
-          </div>
-          <div>
-            <label>Minimum fee</label>
-            <input id="minFee" type="number" min="0" step="1" value="250" />
-          </div>
-        </div>
+  // Initialize map
+  const map = L.map('map', {
+    center: [51.5074, -0.1278], // Default to London
+    zoom: 12,
+    layers: [osm]
+  });
 
-        <div class="row">
-          <div>
-            <label>Complexity</label>
-            <select id="complexity">
-              <option value="1">Standard (×1.00)</option>
-              <option value="1.15">Light obstacles (×1.15)</option>
-              <option value="1.3">Urban / trees (×1.30)</option>
-              <option value="1.5">Challenging site (×1.50)</option>
-            </select>
-          </div>
-          <div>
-            <label>Deliverables</label>
-            <select id="deliverable">
-              <option value="1">Basic orthomosaic (×1.00)</option>
-              <option value="1.2">DSM/DTM & contours (×1.20)</option>
-              <option value="1.35">3D & CAD export (×1.35)</option>
-            </select>
-          </div>
-        </div>
+  // Layer control
+  const baseLayers = {
+    'Road Map': osm,
+    'Satellite': satellite,
+    '3D (requires token)': mapbox3D
+  };
+  L.control.layers(baseLayers).addTo(map);
 
-        <div class="row-3">
-          <div>
-            <label>Travel (fixed)</label>
-            <input id="travel" type="number" min="0" step="1" value="0" />
-          </div>
-          <div>
-            <label>VAT (%)</label>
-            <input id="vat" type="number" min="0" step="1" value="0" />
-          </div>
-          <div>
-            <label>Currency</label>
-            <select id="currency">
-              <option value="£" selected>£</option>
-              <option value="$">$</option>
-              <option value="€">€</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="chips" id="statusChips">
-          <div class="chip"><span id="shapeCount">0</span> area(s)</div>
-          <div class="chip"><span id="vertexCount">0</span> vertices</div>
-        </div>
-
-        <div class="totals" style="margin-top:10px">
-          <div class="line">
-            <div class="k">Area</div>
-            <div class="v"><span class="metric" id="areaHa">0.00</span> ha <span class="muted small">(<span id="areaSqm">0</span> m²)</span></div>
-          </div>
-          <div class="line">
-            <div class="k">Perimeter</div>
-            <div class="v"><span class="metric" id="perim">0</span> m</div>
-          </div>
-          <div class="line">
-            <div class="k">Base</div>
-            <div class="v"><span id="curSym1">£</span><span class="price" id="baseCost">0</span></div>
-          </div>
-          <div class="line">
-            <div class="k">Multipliers</div>
-            <div class="v">×<span id="multiplier">1.00</span></div>
-          </div>
-          <div class="line">
-            <div class="k">Subtotal</div>
-            <div class="v"><span id="curSym2">£</span><span class="price" id="subtotal">0</span></div>
-          </div>
-          <div class="line">
-            <div class="k">Minimum applied</div>
-            <div class="v" id="minApplied" class="muted">—</div>
-          </div>
-          <div class="line total">
-            <div class="k"><b>Total (ex VAT)</b></div>
-            <div class="v"><span id="curSym3">£</span><b class="price" id="totalEx">0</b></div>
-          </div>
-          <div class="line">
-            <div class="k">+ VAT</div>
-            <div class="v"><span id="curSym4">£</span><span class="price" id="vatAmt">0</span></div>
-          </div>
-          <div class="line" style="margin-top:4px;">
-            <div class="k"><b>Grand Total</b></div>
-            <div class="v"><span id="curSym5">£</span><b class="price" id="grandTotal">0</b></div>
-          </div>
-        </div>
-
-        <div class="actions" style="margin-top:12px;">
-          <button class="primary" id="btnExport">Export GeoJSON</button>
-          <button class="copy" id="btnCopy">Copy breakdown</button>
-          <button class="danger" id="btnReset">Clear shapes</button>
-        </div>
-
-        <div class="muted warn" style="margin-top:10px;">
-          Tip: Hold <b>Ctrl/⌘</b> while drawing to snap to last point. Use the edit tool to move vertices.
-        </div>
-      </div>
-
-      <div class="footer">
-        <div class="pill">Libraries: <b>Leaflet</b>, <b>Leaflet-Draw</b>, <b>Turf</b> (local)</div>
-        <div class="disclaimer">This is an estimator for planning purposes only. Confirm pricing with a site assessment.</div>
-      </div>
-    </aside>
-
-    <main id="map"></main>
-  </div>
-
-  <!-- Local scripts (MUST live next to this HTML file) -->
-  <script src="leaflet.js"></script>
-  <script src="leaflet.draw.js"></script>
-  <script src="turf.min.js"></script>
-
-  <script>
-    // --- Map init ---
-    const map = L.map('map', {
-      zoomControl: true,
-      attributionControl: true,
-    }).setView([53.8, -1.6], 6); // UK-ish default
-
-    // Online OSM tiles (map still works offline; tiles won't load though)
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 20,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    // Feature group for drawn shapes
-    const drawn = new L.FeatureGroup();
-    map.addLayer(drawn);
-
-    // Draw controls
-    const drawControl = new L.Control.Draw({
-      draw: {
-        marker: false,
-        circle: false,
-        circlemarker: false,
-        polyline: false,
-        polygon: {
-          allowIntersection: false,
-          showArea: true,
-          shapeOptions: { color: '#22d3ee', weight: 2, fillOpacity: 0.1 }
-        },
-        rectangle: {
-          shapeOptions: { color: '#22d3ee', weight: 2, fillOpacity: 0.08 }
-        }
-      },
-      edit: {
-        featureGroup: drawn,
-        edit: true,
-        remove: true
-      }
-    });
-    map.addControl(drawControl);
-
-    // DOM helpers
-    const $ = (sel) => document.querySelector(sel);
-    const nf = (v, d=2) => Number(v).toLocaleString(undefined, {maximumFractionDigits:d, minimumFractionDigits:d});
-    const n0 = (v) => Number(v).toLocaleString();
-
-    const els = {
-      rate: $('#rate'),
-      minFee: $('#minFee'),
-      complexity: $('#complexity'),
-      deliverable: $('#deliverable'),
-      travel: $('#travel'),
-      vat: $('#vat'),
-      currency: $('#currency'),
-
-      shapeCount: $('#shapeCount'),
-      vertexCount: $('#vertexCount'),
-
-      areaHa: $('#areaHa'),
-      areaSqm: $('#areaSqm'),
-      perim: $('#perim'),
-      baseCost: $('#baseCost'),
-      multiplier: $('#multiplier'),
-      subtotal: $('#subtotal'),
-      minApplied: $('#minApplied'),
-      totalEx: $('#totalEx'),
-      vatAmt: $('#vatAmt'),
-      grandTotal: $('#grandTotal'),
-
-      curSyms: [$('#curSym1'), $('#curSym2'), $('#curSym3'), $('#curSym4'), $('#curSym5')],
-
-      btnExport: $('#btnExport'),
-      btnCopy: $('#btnCopy'),
-      btnReset: $('#btnReset'),
-    };
-
-    function currentMultiplier() {
-      const c = parseFloat(els.complexity.value || 1);
-      const d = parseFloat(els.deliverable.value || 1);
-      return c * d;
+  // Postcode search handler
+  document.getElementById('postcode-search').addEventListener('click', function() {
+    const postcode = document.getElementById('postcode-input').value.trim();
+    const messageEl = document.getElementById('message');
+    messageEl.textContent = '';
+    if (!postcode) {
+      messageEl.textContent = 'Please enter a postcode.';
+      return;
     }
-
-    function polyToFeature(polyLayer) {
-      // Ensure clockwise ring orientation per GeoJSON spec (Turf handles both)
-      return polyLayer.toGeoJSON();
-    }
-
-    function sumGeometry() {
-      let areaSqm = 0;
-      let perim = 0;
-      let vertexCount = 0;
-      drawn.eachLayer((layer) => {
-        try {
-          const gj = polyToFeature(layer);
-          const a = turf.area(gj); // m^2
-          areaSqm += a;
-          // Perimeter (meters): sum of line distances
-          const coords = gj.geometry.type === 'Polygon' ? gj.geometry.coordinates[0] : (gj.geometry.coordinates || []);
-          for (let i=1; i<coords.length; i++) {
-            const p1 = turf.point(coords[i-1]);
-            const p2 = turf.point(coords[i]);
-            perim += turf.distance(p1, p2, {units:'meters'});
-          }
-          vertexCount += coords.length;
-        } catch (e) {
-          console.warn(e);
+    // Use Nominatim to geocode UK postcode
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=gb&q=${encodeURIComponent(postcode)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const { lat, lon, display_name } = data[0];
+          const latNum = parseFloat(lat);
+          const lonNum = parseFloat(lon);
+          map.setView([latNum, lonNum], 18);
+          L.marker([latNum, lonNum]).addTo(map).bindPopup(display_name).openPopup();
+        } else {
+          messageEl.textContent = 'Postcode not found.';
         }
+      })
+      .catch(err => {
+        console.error(err);
+        messageEl.textContent = 'Error searching postcode.';
       });
-      return { areaSqm, perim, vertexCount };
+  });
+
+  // Drawing layer group
+  const drawnItems = new L.FeatureGroup();
+  map.addLayer(drawnItems);
+
+  // Draw control options
+  const drawControl = new L.Control.Draw({
+    edit: {
+      featureGroup: drawnItems
+    },
+    draw: {
+      polyline: false,
+      circle: false,
+      marker: false,
+      circlemarker: false
     }
+  });
+  map.addControl(drawControl);
 
-    function recalc() {
-      const { areaSqm, perim, vertexCount } = sumGeometry();
-      const areaHa = areaSqm / 10000;
-      const rate = parseFloat(els.rate.value || 0);
-      const minFee = parseFloat(els.minFee.value || 0);
-      const travel = parseFloat(els.travel.value || 0);
-      const vatPct = parseFloat(els.vat.value || 0);
-      const mult = currentMultiplier();
-      const sym = els.currency.value || '£';
-      els.curSyms.forEach(el => el.textContent = sym);
+  // Calculate area using Turf.js
+  function calculateArea(layer) {
+    const geojson = layer.toGeoJSON();
+    const area = turf.area(geojson); // in square metres
+    return area;
+  }
 
-      // Prices
-      const base = areaHa * rate;
-      const subtotal = Math.max(base * mult + travel, minFee);
-      const minApplied = subtotal === minFee ? `${sym}${n0(minFee)} (min applied)` : 'No';
-      const vatAmt = subtotal * (vatPct/100);
-      const grand = subtotal + vatAmt;
-
-      // UI
-      els.shapeCount.textContent = drawn.getLayers().length;
-      els.vertexCount.textContent = vertexCount;
-
-      els.areaHa.textContent = nf(areaHa);
-      els.areaSqm.textContent = n0(Math.round(areaSqm));
-      els.perim.textContent = n0(Math.round(perim));
-
-      els.baseCost.textContent = n0(Math.round(base));
-      els.multiplier.textContent = nf(mult, 2);
-      els.subtotal.textContent = n0(Math.round(subtotal));
-      els.minApplied.textContent = minApplied;
-      els.totalEx.textContent = n0(Math.round(subtotal));
-      els.vatAmt.textContent = n0(Math.round(vatAmt));
-      els.grandTotal.textContent = n0(Math.round(grand));
-    }
-
-    // Event wiring
-    map.on(L.Draw.Event.CREATED, (e) => {
-      drawn.addLayer(e.layer);
-      recalc();
-    });
-    map.on(L.Draw.Event.EDITED, recalc);
-    map.on(L.Draw.Event.DELETED, recalc);
-
-    [els.rate, els.minFee, els.complexity, els.deliverable, els.travel, els.vat, els.currency].forEach(el => {
-      el.addEventListener('input', recalc);
-      el.addEventListener('change', recalc);
-    });
-
-    // Export GeoJSON
-    els.btnExport.addEventListener('click', () => {
-      const fc = {
-        type: 'FeatureCollection',
-        features: []
-      };
-      drawn.eachLayer(layer => fc.features.push(polyToFeature(layer)));
-      const blob = new Blob([JSON.stringify(fc, null, 2)], {type: 'application/geo+json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'survey_areas.geojson';
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-
-    // Copy breakdown
-    els.btnCopy.addEventListener('click', async () => {
-      const sym = els.currency.value || '£';
-      const text = `Drone Survey Estimate
-=====================
-Areas: ${els.shapeCount.textContent}
-Vertices: ${els.vertexCount.textContent}
-
-Area: ${els.areaHa.textContent} ha (${els.areaSqm.textContent} m²)
-Perimeter: ${els.perim.textContent} m
-
-Rate: ${sym}${els.rate.value}/ha
-Complexity × Deliverables: ${els.multiplier.textContent}
-Travel (fixed): ${sym}${els.travel.value}
-Minimum fee: ${sym}${els.minFee.value}
-
-Subtotal (ex VAT): ${sym}${els.totalEx.textContent}
-VAT (${els.vat.value}%): ${sym}${els.vatAmt.textContent}
-Grand total: ${sym}${els.grandTotal.textContent}
-`;
-      try {
-        await navigator.clipboard.writeText(text);
-        els.btnCopy.textContent = 'Copied!';
-        setTimeout(() => els.btnCopy.textContent = 'Copy breakdown', 1200);
-      } catch (e) {
-        alert('Copied:\n\n' + text);
-      }
-    });
-
-    // Reset
-    els.btnReset.addEventListener('click', () => {
-      drawn.clearLayers();
-      recalc();
-    });
-
-    // First calc
-    recalc();
-  </script>
+  map.on(L.Draw.Event.CREATED, function(e) {
+    const layer = e.layer;
+    drawnItems.addLayer(layer);
+    const area = calculateArea(layer);
+    const hectares = area / 10000;
+    alert(`Area: ${hectares.toFixed(2)} hectares`);
+  });
+</script>
 </body>
 </html>
