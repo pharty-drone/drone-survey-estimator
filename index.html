@@ -1,150 +1,242 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Drone Survey Estimator with Postcode Search</title>
-<link rel="stylesheet" href="leaflet.css" />
-<link rel="stylesheet" href="leaflet.draw.css" />
-<!-- Mapbox GL CSS for 3D view -->
-<link rel="stylesheet" href="https://api.tiles.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.css" />
-<style>
-  body, html {
-    height: 100%;
-    margin: 0;
-  }
-  #map {
-    height: calc(100vh - 50px);
-    width: 100%;
-  }
-  .controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    background: #f7f7f7;
-    border-bottom: 1px solid #ccc;
-  }
-  .controls input {
-    padding: 4px 8px;
-  }
-  .controls button {
-    padding: 5px 10px;
-    cursor: pointer;
-  }
-  #message {
-    color: red;
-    font-size: 0.9em;
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Drone Survey Estimator — Postcode + Icon Toolbar</title>
+
+  <!-- Local Leaflet & Draw (keep these files next to this HTML) -->
+  <link rel="stylesheet" href="leaflet.css">
+  <link rel="stylesheet" href="leaflet.draw.css">
+
+  <style>
+    :root{
+      --bg:#0b1220; --panel:#101522; --text:#e8eef8; --muted:#a9b3c7; --accent:#22d3ee;
+      --btn:#0f172a; --btn-border:#1f2a44; --btn-hover:#1b2741; --btn-active:#233253;
+    }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    .topbar{
+      display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid #1a2338;
+      background:linear-gradient(180deg,#0f1627,#0a1020);
+    }
+    .topbar input{flex:1;min-width:220px;padding:10px 12px;border-radius:8px;border:1px solid #223255;background:#0a1222;color:#dfe7f7}
+    .topbar button{padding:10px 12px;border-radius:8px;border:1px solid #234;border:none;background:#1a2744;color:#cfe7ff;cursor:pointer}
+    .topbar button:hover{background:#203157}
+    #map{height:calc(100% - 58px);width:100%}
+
+    /* ---------- Custom icon toolbar (left) ---------- */
+    .icon-toolbar{
+      position:absolute;left:12px;top:84px;z-index:1000;display:flex;flex-direction:column;gap:10px;
+    }
+    .icon-btn{
+      --size:44px;
+      width:var(--size);height:var(--size);
+      border-radius:999px;border:1px solid var(--btn-border);background:var(--btn);
+      display:grid;place-items:center;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35);
+      transition:background .15s,transform .05s; color:#fff;
+    }
+    .icon-btn:hover{background:var(--btn-hover)}
+    .icon-btn:active{transform:translateY(1px)}
+    .icon-btn[aria-pressed="true"]{background:var(--btn-active);outline:2px solid #345bff55}
+    .icon-btn:focus-visible{outline:3px solid #2aa7ff88}
+    .icon-btn svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;vector-effect:non-scaling-stroke}
+    .icon-btn .fallback-label{
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      font-size:11px;line-height:1;color:#fff; /* Screen-reader text if SVG fails will still be visible */
+      clip-path:inset(100%); /* hide visually when SVG renders */
+    }
+    /* If SVG fails to load (very rare), show text fallback */
+    .icon-btn svg:has(+ .fallback-label){ /* modern browsers show both; we’ll explicitly unclip on no-SVG envs if needed */}
+    /* ---------- Leaflet map UI tweaks ---------- */
+    .leaflet-control-layers-expanded{background:#0b1327;color:#e9f2ff;border:1px solid #213255}
+    .leaflet-bar a, .leaflet-bar a:hover { background:#0f162a; border-bottom:1px solid #1f2a44; color:#fff;}
+    .leaflet-popup-content{color:#e8eef8}
+  </style>
 </head>
 <body>
-<div class="controls">
-  <input type="text" id="postcode-input" placeholder="Enter UK postcode" />
-  <button id="postcode-search">Search</button>
-  <span id="message"></span>
-</div>
-<div id="map"></div>
-<script src="leaflet.js"></script>
-<script src="leaflet.draw.js"></script>
-<script src="turf.min.js"></script>
-<!-- Mapbox GL JS and Leaflet plugin for 3D (only works if you provide a valid token below) -->
-<script src="https://api.tiles.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.js"></script>
-<script src="https://unpkg.com/mapbox-gl-leaflet@0.0.6/leaflet-mapbox-gl.js"></script>
-<script>
-  // Base layers
-  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  });
-  const satellite = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
-    attribution: 'Imagery &copy; Esri & contributors'
-  });
-  // Mapbox 3D layer (requires your own Mapbox access token). Replace ACCESS_TOKEN below.
-  const mapbox3D = L.mapboxGL({
-    accessToken: 'YOUR_MAPBOX_ACCESS_TOKEN',
-    style: 'mapbox://styles/mapbox/satellite-streets-v12',
-    interactive: true,
-    pitch: 60,
-    bearing: -60
-  });
 
-  // Initialize map
-  const map = L.map('map', {
-    center: [51.5074, -0.1278], // Default to London
-    zoom: 12,
-    layers: [osm]
-  });
+  <!-- Top bar with postcode search -->
+  <div class="topbar">
+    <input id="postcode" type="text" placeholder="Enter UK postcode (e.g., SW1A 1AA)" aria-label="UK postcode"/>
+    <button id="go">Search</button>
+    <span id="msg" style="color:#ffb3b3;font-size:12px"></span>
+  </div>
 
-  // Layer control
-  const baseLayers = {
-    'Road Map': osm,
-    'Satellite': satellite,
-    '3D (requires token)': mapbox3D
-  };
-  L.control.layers(baseLayers).addTo(map);
+  <div id="map" role="application" aria-label="Interactive map for drawing survey areas"></div>
 
-  // Postcode search handler
-  document.getElementById('postcode-search').addEventListener('click', function() {
-    const postcode = document.getElementById('postcode-input').value.trim();
-    const messageEl = document.getElementById('message');
-    messageEl.textContent = '';
-    if (!postcode) {
-      messageEl.textContent = 'Please enter a postcode.';
-      return;
+  <!-- Icon toolbar -->
+  <div class="icon-toolbar" role="toolbar" aria-label="Drawing tools">
+    <!-- Zoom in/out -->
+    <button class="icon-btn" id="btn-zoom-in" title="Zoom in (+)" aria-label="Zoom in">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="fallback-label">+</span>
+    </button>
+    <button class="icon-btn" id="btn-zoom-out" title="Zoom out (−)" aria-label="Zoom out">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg><span class="fallback-label">-</span>
+    </button>
+
+    <!-- Draw rectangle -->
+    <button class="icon-btn" id="btn-rect" title="Draw Rectangle (R)" aria-label="Draw rectangle" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="6" width="14" height="12" rx="2"/></svg>
+      <span class="fallback-label">Rect</span>
+    </button>
+
+    <!-- Draw polygon -->
+    <button class="icon-btn" id="btn-poly" title="Draw Polygon (P)" aria-label="Draw polygon" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 17L4 9l8-4 8 5-3 9zM6 17h12"/></svg>
+      <span class="fallback-label">Poly</span>
+    </button>
+
+    <!-- Edit -->
+    <button class="icon-btn" id="btn-edit" title="Edit Shapes (E)" aria-label="Edit shapes" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l5-1 10-10-4-4L5 15l-1 5zM14 6l4 4"/></svg>
+      <span class="fallback-label">Edit</span>
+    </button>
+
+    <!-- Delete -->
+    <button class="icon-btn" id="btn-del" title="Delete Shapes (Del)" aria-label="Delete shapes" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7v-2h6v2M8 7v12m8-12v12M6 7h12"/></svg>
+      <span class="fallback-label">Del</span>
+    </button>
+
+    <!-- Locate -->
+    <button class="icon-btn" id="btn-locate" title="Locate me" aria-label="Locate me">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M21 12h-3M12 21v-3M6 12H3"/></svg>
+      <span class="fallback-label">Locate</span>
+    </button>
+  </div>
+
+  <!-- Local scripts -->
+  <script src="leaflet.js"></script>
+  <script src="leaflet.draw.js"></script>
+  <script src="turf.min.js"></script>
+
+  <script>
+    // ---------- Map ----------
+    const map = L.map('map', { zoomControl:true, attributionControl:true }).setView([53.8, -1.6], 6);
+
+    // Basemaps
+    const road = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      maxZoom:20, attribution:'&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const satellite = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+      maxZoom:20, attribution:'Imagery &copy; Esri & contributors'
+    });
+
+    L.control.layers(
+      {"Road":road, "Satellite":satellite},
+      null, { position:"topright" }
+    ).addTo(map);
+
+    // ---------- Draw Layer ----------
+    const drawn = new L.FeatureGroup(); map.addLayer(drawn);
+
+    const drawStyle = { shapeOptions:{ color:'#22d3ee', weight:2, fillOpacity:0.12 } };
+
+    // Pre-build handlers (lets us control them from our buttons)
+    const rectDrawer = new L.Draw.Rectangle(map, drawStyle);
+    const polyDrawer = new L.Draw.Polygon(map, drawStyle);
+
+    function disableAllDraw() {
+      rectDrawer.disable(); polyDrawer.disable();
+      setPressed('btn-rect', false); setPressed('btn-poly', false);
+      if(editHandler) editHandler.disable(), setPressed('btn-edit',false);
+      if(delHandler) delHandler.disable(), setPressed('btn-del',false);
     }
-    // Use Nominatim to geocode UK postcode
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=gb&q=${encodeURIComponent(postcode)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          const { lat, lon, display_name } = data[0];
-          const latNum = parseFloat(lat);
-          const lonNum = parseFloat(lon);
-          map.setView([latNum, lonNum], 18);
-          L.marker([latNum, lonNum]).addTo(map).bindPopup(display_name).openPopup();
-        } else {
-          messageEl.textContent = 'Postcode not found.';
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        messageEl.textContent = 'Error searching postcode.';
+
+    function setPressed(id, val){ const b=document.getElementById(id); b?.setAttribute('aria-pressed', String(!!val)); }
+
+    map.on(L.Draw.Event.CREATED, e => {
+      drawn.addLayer(e.layer);
+      // simple area alert
+      try{
+        const gj = e.layer.toGeoJSON();
+        const sqm = turf.area(gj); const ha = sqm/10000;
+        L.popup().setLatLng(e.layer.getBounds ? e.layer.getBounds().getCenter() : e.layer.getLatLng())
+                 .setContent(`<b>Area:</b> ${ha.toFixed(2)} ha<br><small>${Math.round(sqm).toLocaleString()} m²</small>`)
+                 .openOn(map);
+      }catch(_){}
+      disableAllDraw();
+    });
+
+    // ---------- Edit/Delete handlers built on demand ----------
+    let editHandler = null, delHandler = null;
+
+    // ---------- Toolbar actions ----------
+    document.getElementById('btn-zoom-in').addEventListener('click', () => map.zoomIn());
+    document.getElementById('btn-zoom-out').addEventListener('click', () => map.zoomOut());
+
+    document.getElementById('btn-rect').addEventListener('click', () => {
+      disableAllDraw(); rectDrawer.enable(); setPressed('btn-rect', true);
+    });
+
+    document.getElementById('btn-poly').addEventListener('click', () => {
+      disableAllDraw(); polyDrawer.enable(); setPressed('btn-poly', true);
+    });
+
+    document.getElementById('btn-edit').addEventListener('click', () => {
+      disableAllDraw();
+      editHandler = new L.EditToolbar.Edit(map, { featureGroup: drawn, selectedPathOptions:{ maintainColor:true, opacity:0.6 }});
+      editHandler.enable(); setPressed('btn-edit', true);
+    });
+
+    document.getElementById('btn-del').addEventListener('click', () => {
+      disableAllDraw();
+      delHandler = new L.EditToolbar.Delete(map, { featureGroup: drawn });
+      delHandler.enable(); setPressed('btn-del', true);
+    });
+
+    document.getElementById('btn-locate').addEventListener('click', () => {
+      map.locate({ setView:true, maxZoom:16 }); // permission prompt from browser
+    });
+
+    // Keyboard support for buttons
+    document.querySelectorAll('.icon-btn').forEach(btn=>{
+      btn.tabIndex = 0;
+      btn.addEventListener('keydown', e=>{
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); btn.click(); }
       });
-  });
+    });
 
-  // Drawing layer group
-  const drawnItems = new L.FeatureGroup();
-  map.addLayer(drawnItems);
+    // ---------- Postcode search ----------
+    const input = document.getElementById('postcode');
+    const goBtn = document.getElementById('go');
+    const msg = document.getElementById('msg');
 
-  // Draw control options
-  const drawControl = new L.Control.Draw({
-    edit: {
-      featureGroup: drawnItems
-    },
-    draw: {
-      polyline: false,
-      circle: false,
-      marker: false,
-      circlemarker: false
+    function searchPostcode() {
+      msg.textContent = '';
+      const q = (input.value || '').trim();
+      if(!q){ msg.textContent='Please enter a postcode.'; return; }
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=gb&q=${encodeURIComponent(q)}`)
+      .then(r=>r.json()).then(data=>{
+        if(data && data.length){
+          const {lat,lon,display_name} = data[0];
+          const latNum = parseFloat(lat), lonNum = parseFloat(lon);
+          map.setView([latNum,lonNum], 18);
+          L.marker([latNum,lonNum], {title:display_name}).addTo(map).bindPopup(display_name).openPopup();
+        } else msg.textContent = 'Postcode not found.';
+      }).catch(()=> msg.textContent = 'Search error, please try again.');
     }
-  });
-  map.addControl(drawControl);
+    goBtn.addEventListener('click', searchPostcode);
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter') searchPostcode(); });
 
-  // Calculate area using Turf.js
-  function calculateArea(layer) {
-    const geojson = layer.toGeoJSON();
-    const area = turf.area(geojson); // in square metres
-    return area;
-  }
+    // Accessibility hint for first-time users
+    setTimeout(()=>{ L.popup({closeButton:true,autoPan:false})
+      .setLatLng(map.getCenter())
+      .setContent('Tip: use the left toolbar to draw rectangles or polygons. Hover for tooltips; press <b>R</b> for rectangle or <b>P</b> for polygon.')
+      .openOn(map);
+    }, 800);
 
-  map.on(L.Draw.Event.CREATED, function(e) {
-    const layer = e.layer;
-    drawnItems.addLayer(layer);
-    const area = calculateArea(layer);
-    const hectares = area / 10000;
-    alert(`Area: ${hectares.toFixed(2)} hectares`);
-  });
-</script>
+    // Optional keyboard shortcuts
+    window.addEventListener('keydown', e=>{
+      if(e.target === input) return;
+      if(e.key==='r' || e.key==='R'){ document.getElementById('btn-rect').click(); }
+      if(e.key==='p' || e.key==='P'){ document.getElementById('btn-poly').click(); }
+      if(e.key==='e' || e.key==='E'){ document.getElementById('btn-edit').click(); }
+      if(e.key==='Delete'){ document.getElementById('btn-del').click(); }
+      if(e.key==='+'){ map.zoomIn(); }
+      if(e.key==='-'){ map.zoomOut(); }
+    });
+  </script>
 </body>
 </html>
