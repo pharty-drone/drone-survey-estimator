@@ -23,6 +23,19 @@
       border-radius:10px;padding:10px 12px;font:14px/1.4 system-ui,sans-serif
     }
     .badge {display:inline-block;min-width:72px;text-align:right}
+
+    /* navigation mode buttons */
+    .nav-modes {
+      position:absolute;left:12px;top:50%;transform:translateY(-50%);
+      display:flex;flex-direction:column;gap:4px;
+      background:rgba(255,255,255,.92);border-radius:10px;padding:8px;
+    }
+    .nav-modes button {
+      width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+      border:0;border-radius:6px;background:transparent;color:#111;cursor:pointer;
+      font-size:16px;line-height:1;transition:background .2s;
+    }
+    .nav-modes button.active {background:#111;color:#fff}
   </style>
 </head>
 <body>
@@ -31,6 +44,13 @@
   <div class="toolbar" role="toolbar" aria-label="Drawing tools">
     <button id="draw-poly" class="btn" aria-pressed="true">Draw</button>
     <button id="trash" class="btn alt">Clear</button>
+  </div>
+
+  <div class="nav-modes" role="toolbar" aria-label="Navigation modes">
+    <button aria-label="Orbit" data-mode="orbit" class="active">⭮</button>
+    <button aria-label="Pan" data-mode="pan">✋</button>
+    <button aria-label="Zoom" data-mode="zoom">🔍</button>
+    <button aria-label="Fly" data-mode="fly">🕹</button>
   </div>
 
   <div class="hud" role="status" aria-live="polite">
@@ -88,6 +108,115 @@
 
     document.getElementById('draw-poly').addEventListener('click', () => draw.changeMode('draw_polygon'));
     document.getElementById('trash').addEventListener('click', () => { draw.deleteAll(); updateArea(); });
+
+    // navigation modes
+    const modeBar = document.querySelector('.nav-modes');
+    let mode = 'orbit';
+    modeBar.addEventListener('click', (e) => {
+      if (e.target.matches('button')) {
+        mode = e.target.dataset.mode;
+        modeBar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === e.target));
+        if (mode === 'fly') {
+          map.setPitch(85);
+        } else {
+          map.setPitch(45);
+        }
+      }
+    });
+
+    map.getCanvas().addEventListener('contextmenu', e => e.preventDefault());
+
+    let dragStart, startBearing, startPitch, startZoom;
+    function startOrbit(e) {
+      dragStart = [e.clientX, e.clientY];
+      startBearing = map.getBearing();
+      startPitch = map.getPitch();
+      document.addEventListener('mousemove', onRotate);
+      document.addEventListener('mouseup', endInteraction);
+    }
+    function onRotate(e) {
+      const dx = e.clientX - dragStart[0];
+      const dy = e.clientY - dragStart[1];
+      map.setBearing(startBearing - dx * 0.4);
+      map.setPitch(Math.max(0, Math.min(85, startPitch + dy * 0.4)));
+    }
+
+    function startPan(e) {
+      dragStart = [e.clientX, e.clientY];
+      document.addEventListener('mousemove', onPan);
+      document.addEventListener('mouseup', endInteraction);
+    }
+    function onPan(e) {
+      const dx = e.clientX - dragStart[0];
+      const dy = e.clientY - dragStart[1];
+      map.panBy([-dx, -dy], {animate:false});
+      dragStart = [e.clientX, e.clientY];
+    }
+
+    function startDragZoom(e) {
+      dragStart = e.clientY;
+      startZoom = map.getZoom();
+      document.addEventListener('mousemove', onDragZoom);
+      document.addEventListener('mouseup', endInteraction);
+    }
+    function onDragZoom(e) {
+      const dy = e.clientY - dragStart;
+      map.zoomTo(startZoom - dy / 100, {animate:false});
+    }
+
+    function endInteraction() {
+      document.removeEventListener('mousemove', onRotate);
+      document.removeEventListener('mousemove', onPan);
+      document.removeEventListener('mousemove', onDragZoom);
+      document.removeEventListener('mouseup', endInteraction);
+    }
+
+    function onMouseDown(e) {
+      if (mode === 'pan' || (e.altKey && e.button === 1)) {
+        startPan(e);
+      } else if (mode === 'zoom' || (e.altKey && e.button === 2)) {
+        startDragZoom(e);
+      } else if (mode === 'fly') {
+        if (e.button === 0) startPan(e);
+        if (e.button === 2) startOrbit(e);
+      } else {
+        // orbit default
+        startOrbit(e);
+      }
+    }
+    map.getCanvas().addEventListener('mousedown', onMouseDown);
+
+    const keys = {};
+    window.addEventListener('keydown', e => { keys[e.code] = true; });
+    window.addEventListener('keyup', e => { keys[e.code] = false; });
+    function flyLoop() {
+      if (mode === 'fly') {
+        const step = 10;
+        let off = [0,0];
+        if (keys['KeyW']) off[1] -= step;
+        if (keys['KeyS']) off[1] += step;
+        if (keys['KeyA']) off[0] -= step;
+        if (keys['KeyD']) off[0] += step;
+        if (off[0] || off[1]) map.panBy(off, {animate:false});
+      }
+      requestAnimationFrame(flyLoop);
+    }
+    flyLoop();
+
+    map.on('dblclick', e => {
+      e.preventDefault();
+      map.flyTo({center: e.lngLat});
+    });
+
+    window.addEventListener('keydown', e => {
+      if (e.key.toLowerCase() === 'f') {
+        const data = draw.getAll();
+        if (data.features.length) {
+          const box = turf.bbox(data);
+          map.fitBounds([[box[0], box[1]], [box[2], box[3]]], {padding:40});
+        }
+      }
+    });
   </script>
 </body>
 </html>
