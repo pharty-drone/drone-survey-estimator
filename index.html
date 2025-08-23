@@ -1,242 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Drone Survey Estimator — Postcode + Icon Toolbar</title>
-
-  <!-- Local Leaflet & Draw (keep these files next to this HTML) -->
-  <link rel="stylesheet" href="leaflet.css">
-  <link rel="stylesheet" href="leaflet.draw.css">
-
+  <meta charset="utf-8">
+  <title>Roof Inspection Tool Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.css" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.0/mapbox-gl-draw.css" rel="stylesheet">
   <style>
-    :root{
-      --bg:#0b1220; --panel:#101522; --text:#e8eef8; --muted:#a9b3c7; --accent:#22d3ee;
-      --btn:#0f172a; --btn-border:#1f2a44; --btn-hover:#1b2741; --btn-active:#233253;
+    html,body {height:100%;margin:0}
+    #map {position:absolute;inset:0}
+    .hud {
+      position:absolute;left:12px;bottom:12px;
+      background:rgba(255,255,255,.92);backdrop-filter:saturate(120%) blur(6px);
+      border-radius:10px;padding:10px 12px;font:14px/1.4 system-ui, sans-serif;
+      box-shadow:0 6px 20px rgba(0,0,0,.12)
     }
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    .topbar{
-      display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid #1a2338;
-      background:linear-gradient(180deg,#0f1627,#0a1020);
+    .toolbar {
+      position:absolute;left:12px;top:12px;display:flex;gap:8px;
+      background:rgba(255,255,255,.92);border-radius:10px;padding:8px 10px
     }
-    .topbar input{flex:1;min-width:220px;padding:10px 12px;border-radius:8px;border:1px solid #223255;background:#0a1222;color:#dfe7f7}
-    .topbar button{padding:10px 12px;border-radius:8px;border:1px solid #234;border:none;background:#1a2744;color:#cfe7ff;cursor:pointer}
-    .topbar button:hover{background:#203157}
-    #map{height:calc(100% - 58px);width:100%}
-
-    /* ---------- Custom icon toolbar (left) ---------- */
-    .icon-toolbar{
-      position:absolute;left:12px;top:84px;z-index:1000;display:flex;flex-direction:column;gap:10px;
-    }
-    .icon-btn{
-      --size:44px;
-      width:var(--size);height:var(--size);
-      border-radius:999px;border:1px solid var(--btn-border);background:var(--btn);
-      display:grid;place-items:center;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35);
-      transition:background .15s,transform .05s; color:#fff;
-    }
-    .icon-btn:hover{background:var(--btn-hover)}
-    .icon-btn:active{transform:translateY(1px)}
-    .icon-btn[aria-pressed="true"]{background:var(--btn-active);outline:2px solid #345bff55}
-    .icon-btn:focus-visible{outline:3px solid #2aa7ff88}
-    .icon-btn svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;vector-effect:non-scaling-stroke}
-    .icon-btn .fallback-label{
-      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-      font-size:11px;line-height:1;color:#fff; /* Screen-reader text if SVG fails will still be visible */
-      clip-path:inset(100%); /* hide visually when SVG renders */
-    }
-    /* If SVG fails to load (very rare), show text fallback */
-    .icon-btn svg:has(+ .fallback-label){ /* modern browsers show both; we’ll explicitly unclip on no-SVG envs if needed */}
-    /* ---------- Leaflet map UI tweaks ---------- */
-    .leaflet-control-layers-expanded{background:#0b1327;color:#e9f2ff;border:1px solid #213255}
-    .leaflet-bar a, .leaflet-bar a:hover { background:#0f162a; border-bottom:1px solid #1f2a44; color:#fff;}
-    .leaflet-popup-content{color:#e8eef8}
+    .btn {border:0;background:#111;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer}
+    .btn.alt {background:#e6e6e6;color:#111}
+    .badge {display:inline-block;min-width:72px;text-align:right}
   </style>
 </head>
 <body>
+  <div id="map" aria-label="Satellite map for drawing roofs"></div>
 
-  <!-- Top bar with postcode search -->
-  <div class="topbar">
-    <input id="postcode" type="text" placeholder="Enter UK postcode (e.g., SW1A 1AA)" aria-label="UK postcode"/>
-    <button id="go">Search</button>
-    <span id="msg" style="color:#ffb3b3;font-size:12px"></span>
+  <div class="toolbar" role="toolbar" aria-label="Drawing tools">
+    <button id="draw-poly" class="btn" aria-pressed="true">Draw</button>
+    <button id="trash" class="btn alt">Clear</button>
   </div>
 
-  <div id="map" role="application" aria-label="Interactive map for drawing survey areas"></div>
-
-  <!-- Icon toolbar -->
-  <div class="icon-toolbar" role="toolbar" aria-label="Drawing tools">
-    <!-- Zoom in/out -->
-    <button class="icon-btn" id="btn-zoom-in" title="Zoom in (+)" aria-label="Zoom in">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="fallback-label">+</span>
-    </button>
-    <button class="icon-btn" id="btn-zoom-out" title="Zoom out (−)" aria-label="Zoom out">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg><span class="fallback-label">-</span>
-    </button>
-
-    <!-- Draw rectangle -->
-    <button class="icon-btn" id="btn-rect" title="Draw Rectangle (R)" aria-label="Draw rectangle" aria-pressed="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="6" width="14" height="12" rx="2"/></svg>
-      <span class="fallback-label">Rect</span>
-    </button>
-
-    <!-- Draw polygon -->
-    <button class="icon-btn" id="btn-poly" title="Draw Polygon (P)" aria-label="Draw polygon" aria-pressed="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 17L4 9l8-4 8 5-3 9zM6 17h12"/></svg>
-      <span class="fallback-label">Poly</span>
-    </button>
-
-    <!-- Edit -->
-    <button class="icon-btn" id="btn-edit" title="Edit Shapes (E)" aria-label="Edit shapes" aria-pressed="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l5-1 10-10-4-4L5 15l-1 5zM14 6l4 4"/></svg>
-      <span class="fallback-label">Edit</span>
-    </button>
-
-    <!-- Delete -->
-    <button class="icon-btn" id="btn-del" title="Delete Shapes (Del)" aria-label="Delete shapes" aria-pressed="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7v-2h6v2M8 7v12m8-12v12M6 7h12"/></svg>
-      <span class="fallback-label">Del</span>
-    </button>
-
-    <!-- Locate -->
-    <button class="icon-btn" id="btn-locate" title="Locate me" aria-label="Locate me">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M21 12h-3M12 21v-3M6 12H3"/></svg>
-      <span class="fallback-label">Locate</span>
-    </button>
+  <div class="hud" role="status" aria-live="polite">
+    <div>Area: <span class="badge" id="area-m2">0</span> m²</div>
+    <div>Area: <span class="badge" id="area-ft2">0</span> ft²</div>
+    <div>Est. cost: <span class="badge" id="estimate">–</span></div>
   </div>
 
-  <!-- Local scripts -->
-  <script src="leaflet.js"></script>
-  <script src="leaflet.draw.js"></script>
-  <script src="turf.min.js"></script>
-
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.0/mapbox-gl-draw.js"></script>
   <script>
-    // ---------- Map ----------
-    const map = L.map('map', { zoomControl:true, attributionControl:true }).setView([53.8, -1.6], 6);
-
-    // Basemaps
-    const road = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-      maxZoom:20, attribution:'&copy; OpenStreetMap'
-    }).addTo(map);
-
-    const satellite = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
-      maxZoom:20, attribution:'Imagery &copy; Esri & contributors'
+    mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/satellite-v9',
+      center: [-2.0, 53.6], // UK-ish
+      zoom: 16,
+      pitch: 45,
+      bearing: -17
     });
 
-    L.control.layers(
-      {"Road":road, "Satellite":satellite},
-      null, { position:"topright" }
-    ).addTo(map);
+    map.addControl(new mapboxgl.NavigationControl({ showZoom:true, showCompass:true }), 'top-right');
 
-    // ---------- Draw Layer ----------
-    const drawn = new L.FeatureGroup(); map.addLayer(drawn);
+    const draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: { polygon: true, trash: true },
+      defaultMode: 'draw_polygon'
+    });
+    map.addControl(draw);
 
-    const drawStyle = { shapeOptions:{ color:'#22d3ee', weight:2, fillOpacity:0.12 } };
+    const elM2 = document.getElementById('area-m2');
+    const elFt2 = document.getElementById('area-ft2');
+    const elEst = document.getElementById('estimate');
 
-    // Pre-build handlers (lets us control them from our buttons)
-    const rectDrawer = new L.Draw.Rectangle(map, drawStyle);
-    const polyDrawer = new L.Draw.Polygon(map, drawStyle);
+    function updateArea() {
+      const data = draw.getAll();
+      if (data.features.length) {
+        const areaM2 = turf.area(data);
+        const areaFt2 = areaM2 * 10.76391041671;
+        elM2.textContent = (Math.round(areaM2 * 100) / 100).toLocaleString();
+        elFt2.textContent = (Math.round(areaFt2 * 100) / 100).toLocaleString();
 
-    function disableAllDraw() {
-      rectDrawer.disable(); polyDrawer.disable();
-      setPressed('btn-rect', false); setPressed('btn-poly', false);
-      if(editHandler) editHandler.disable(), setPressed('btn-edit',false);
-      if(delHandler) delHandler.disable(), setPressed('btn-del',false);
+        // Placeholder estimate; replace later
+        const baseCallout = 49;            // e.g. flat fee
+        const ratePerM2  = 0.45;           // e.g. variable
+        const estimate   = baseCallout + ratePerM2 * (areaM2 / 1); 
+        elEst.textContent = '£' + (Math.round(estimate * 100) / 100).toLocaleString();
+      } else {
+        elM2.textContent = '0';
+        elFt2.textContent = '0';
+        elEst.textContent = '–';
+      }
     }
 
-    function setPressed(id, val){ const b=document.getElementById(id); b?.setAttribute('aria-pressed', String(!!val)); }
+    map.on('draw.create', updateArea);
+    map.on('draw.update', updateArea);
+    map.on('draw.delete', updateArea);
 
-    map.on(L.Draw.Event.CREATED, e => {
-      drawn.addLayer(e.layer);
-      // simple area alert
-      try{
-        const gj = e.layer.toGeoJSON();
-        const sqm = turf.area(gj); const ha = sqm/10000;
-        L.popup().setLatLng(e.layer.getBounds ? e.layer.getBounds().getCenter() : e.layer.getLatLng())
-                 .setContent(`<b>Area:</b> ${ha.toFixed(2)} ha<br><small>${Math.round(sqm).toLocaleString()} m²</small>`)
-                 .openOn(map);
-      }catch(_){}
-      disableAllDraw();
+    // Toolbar bindings (optional explicit buttons)
+    document.getElementById('draw-poly').addEventListener('click', () => {
+      draw.changeMode('draw_polygon');
     });
-
-    // ---------- Edit/Delete handlers built on demand ----------
-    let editHandler = null, delHandler = null;
-
-    // ---------- Toolbar actions ----------
-    document.getElementById('btn-zoom-in').addEventListener('click', () => map.zoomIn());
-    document.getElementById('btn-zoom-out').addEventListener('click', () => map.zoomOut());
-
-    document.getElementById('btn-rect').addEventListener('click', () => {
-      disableAllDraw(); rectDrawer.enable(); setPressed('btn-rect', true);
-    });
-
-    document.getElementById('btn-poly').addEventListener('click', () => {
-      disableAllDraw(); polyDrawer.enable(); setPressed('btn-poly', true);
-    });
-
-    document.getElementById('btn-edit').addEventListener('click', () => {
-      disableAllDraw();
-      editHandler = new L.EditToolbar.Edit(map, { featureGroup: drawn, selectedPathOptions:{ maintainColor:true, opacity:0.6 }});
-      editHandler.enable(); setPressed('btn-edit', true);
-    });
-
-    document.getElementById('btn-del').addEventListener('click', () => {
-      disableAllDraw();
-      delHandler = new L.EditToolbar.Delete(map, { featureGroup: drawn });
-      delHandler.enable(); setPressed('btn-del', true);
-    });
-
-    document.getElementById('btn-locate').addEventListener('click', () => {
-      map.locate({ setView:true, maxZoom:16 }); // permission prompt from browser
-    });
-
-    // Keyboard support for buttons
-    document.querySelectorAll('.icon-btn').forEach(btn=>{
-      btn.tabIndex = 0;
-      btn.addEventListener('keydown', e=>{
-        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); btn.click(); }
-      });
-    });
-
-    // ---------- Postcode search ----------
-    const input = document.getElementById('postcode');
-    const goBtn = document.getElementById('go');
-    const msg = document.getElementById('msg');
-
-    function searchPostcode() {
-      msg.textContent = '';
-      const q = (input.value || '').trim();
-      if(!q){ msg.textContent='Please enter a postcode.'; return; }
-      fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=gb&q=${encodeURIComponent(q)}`)
-      .then(r=>r.json()).then(data=>{
-        if(data && data.length){
-          const {lat,lon,display_name} = data[0];
-          const latNum = parseFloat(lat), lonNum = parseFloat(lon);
-          map.setView([latNum,lonNum], 18);
-          L.marker([latNum,lonNum], {title:display_name}).addTo(map).bindPopup(display_name).openPopup();
-        } else msg.textContent = 'Postcode not found.';
-      }).catch(()=> msg.textContent = 'Search error, please try again.');
-    }
-    goBtn.addEventListener('click', searchPostcode);
-    input.addEventListener('keydown', e=>{ if(e.key==='Enter') searchPostcode(); });
-
-    // Accessibility hint for first-time users
-    setTimeout(()=>{ L.popup({closeButton:true,autoPan:false})
-      .setLatLng(map.getCenter())
-      .setContent('Tip: use the left toolbar to draw rectangles or polygons. Hover for tooltips; press <b>R</b> for rectangle or <b>P</b> for polygon.')
-      .openOn(map);
-    }, 800);
-
-    // Optional keyboard shortcuts
-    window.addEventListener('keydown', e=>{
-      if(e.target === input) return;
-      if(e.key==='r' || e.key==='R'){ document.getElementById('btn-rect').click(); }
-      if(e.key==='p' || e.key==='P'){ document.getElementById('btn-poly').click(); }
-      if(e.key==='e' || e.key==='E'){ document.getElementById('btn-edit').click(); }
-      if(e.key==='Delete'){ document.getElementById('btn-del').click(); }
-      if(e.key==='+'){ map.zoomIn(); }
-      if(e.key==='-'){ map.zoomOut(); }
+    document.getElementById('trash').addEventListener('click', () => {
+      const ids = draw.getAll().features.map(f => f.id);
+      ids.forEach(id => draw.delete(id));
+      updateArea();
     });
   </script>
 </body>
 </html>
+
