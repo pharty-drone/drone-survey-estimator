@@ -18,11 +18,13 @@
     }
     .btn {border:0;background:#111;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer}
     .btn.alt {background:#e6e6e6;color:#111}
-    .hud {
-      position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.92);
-      border-radius:10px;padding:10px 12px;font:14px/1.4 system-ui,sans-serif
+    .measure-card {
+      position:absolute;right:12px;top:12px;background:rgba(255,255,255,.92);
+      border-radius:10px;padding:12px 14px;font:16px/1.4 system-ui,sans-serif;
+      box-shadow:0 1px 3px rgba(0,0,0,0.15);
     }
-    .badge {display:inline-block;min-width:72px;text-align:right}
+    .measure-card h3 {margin:0 0 6px;font-size:16px;}
+    .measure-card p {margin:4px 0;}
 
     /* navigation mode buttons */
     .nav-modes {
@@ -53,10 +55,14 @@
     <button aria-label="Fly" data-mode="fly">🕹</button>
   </div>
 
-  <div class="hud" role="status" aria-live="polite">
-    <div>Area: <span class="badge" id="area-m2">0</span> m²</div>
-    <div>Area: <span class="badge" id="area-ft2">0</span> ft²</div>
-    <div>Est. cost: <span class="badge" id="estimate">–</span></div>
+  <div class="measure-card" role="status" aria-live="polite">
+    <h3>Path or polygon</h3>
+    <p id="perimeter">Perimeter: – m</p>
+    <p id="area">Area: – m²</p>
+    <details>
+      <summary>Estimated cost</summary>
+      <p id="estimate">–</p>
+    </details>
   </div>
 
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
@@ -65,16 +71,35 @@
   <script>
     mapboxgl.accessToken = 'pk.eyJ1IjoicGRoMDQwNSIsImEiOiJjbWVvcHhyeWcwYmJpMm1xdmd0bXUzdDByIn0.6thOLX7aKDCd1POUgSPdSA';
 
+    const sensitivity = 0.25; // lower = less sensitive
+
     const map = new mapboxgl.Map({
       container: 'map',
-      style: 'mapbox://styles/mapbox/satellite-v9',
+      style: 'mapbox://styles/mapbox/satellite-streets-v12',
       center: [-2.0, 53.6],  // UK-ish
       zoom: 16,
       pitch: 45,
-      bearing: -17
+      bearing: -17,
+      maxZoom: 22,
+      antialias: true
     });
 
     map.addControl(new mapboxgl.NavigationControl({ showZoom:true, showCompass:true }), 'top-right');
+
+    // reduce default drag rotation sensitivity
+    map.on('rotatestart', e => {
+      e.preventDefault();
+      map.on('mousemove', onRotateDrag);
+    });
+    map.on('rotateend', () => {
+      map.off('mousemove', onRotateDrag);
+    });
+    function onRotateDrag(e) {
+      const bearingDelta = -e.movementX * 0.2 * sensitivity;
+      const pitchDelta   =  e.movementY * 0.2 * sensitivity;
+      map.rotateTo(map.getBearing() + bearingDelta, {duration: 0});
+      map.setPitch(Math.max(0, Math.min(85, map.getPitch() + pitchDelta)));
+    }
 
     const draw = new MapboxDraw({
       displayControlsDefault: false,
@@ -82,32 +107,36 @@
       defaultMode: 'draw_polygon'
     });
     map.addControl(draw);
-
-    const elM2 = document.getElementById('area-m2');
-    const elFt2 = document.getElementById('area-ft2');
+    const elPerimeter = document.getElementById('perimeter');
+    const elArea = document.getElementById('area');
     const elEst = document.getElementById('estimate');
 
-    function updateArea() {
+    function updateMeasurements() {
       const data = draw.getAll();
       if (!data.features.length) {
-        elM2.textContent = '0'; elFt2.textContent = '0'; elEst.textContent = '–'; return;
+        elPerimeter.textContent = 'Perimeter: – m';
+        elArea.textContent = 'Area: – m²';
+        elEst.textContent = '–';
+        return;
       }
-      const areaM2 = turf.area(data);
-      const areaFt2 = areaM2 * 10.76391041671;
-      elM2.textContent = (Math.round(areaM2 * 100) / 100).toLocaleString();
-      elFt2.textContent = (Math.round(areaFt2 * 100) / 100).toLocaleString();
+      const polygon = data.features[0];
+      const areaM2 = turf.area(polygon);
+      const line = turf.polygonToLine(polygon);
+      const perimeterM = turf.length(line, {units:'kilometers'}) * 1000;
 
-      // Placeholder pricing (change later)
-      const estimate = 49 + 0.45 * areaM2; // base + per m²
-      elEst.textContent = '£' + (Math.round(estimate * 100) / 100).toLocaleString();
+      elArea.textContent = `Area: ${areaM2.toLocaleString(undefined,{maximumFractionDigits:2})} m²`;
+      elPerimeter.textContent = `Perimeter: ${perimeterM.toLocaleString(undefined,{maximumFractionDigits:2})} m`;
+
+      const estimate = 49 + 0.45 * areaM2; // example pricing
+      elEst.textContent = `£${estimate.toFixed(2)}`;
     }
 
-    map.on('draw.create', updateArea);
-    map.on('draw.update', updateArea);
-    map.on('draw.delete', updateArea);
+    map.on('draw.create', updateMeasurements);
+    map.on('draw.update', updateMeasurements);
+    map.on('draw.delete', updateMeasurements);
 
     document.getElementById('draw-poly').addEventListener('click', () => draw.changeMode('draw_polygon'));
-    document.getElementById('trash').addEventListener('click', () => { draw.deleteAll(); updateArea(); });
+    document.getElementById('trash').addEventListener('click', () => { draw.deleteAll(); updateMeasurements(); });
 
     // navigation modes
     const modeBar = document.querySelector('.nav-modes');
@@ -131,14 +160,14 @@
       dragStart = [e.clientX, e.clientY];
       startBearing = map.getBearing();
       startPitch = map.getPitch();
-      document.addEventListener('mousemove', onRotate);
+      document.addEventListener('mousemove', onOrbitRotate);
       document.addEventListener('mouseup', endInteraction);
     }
-    function onRotate(e) {
+    function onOrbitRotate(e) {
       const dx = e.clientX - dragStart[0];
       const dy = e.clientY - dragStart[1];
-      map.setBearing(startBearing - dx * 0.4);
-      map.setPitch(Math.max(0, Math.min(85, startPitch + dy * 0.4)));
+      map.setBearing(startBearing - dx * 0.4 * sensitivity);
+      map.setPitch(Math.max(0, Math.min(85, startPitch + dy * 0.4 * sensitivity)));
     }
 
     function startPan(e) {
@@ -165,7 +194,7 @@
     }
 
     function endInteraction() {
-      document.removeEventListener('mousemove', onRotate);
+      document.removeEventListener('mousemove', onOrbitRotate);
       document.removeEventListener('mousemove', onPan);
       document.removeEventListener('mousemove', onDragZoom);
       document.removeEventListener('mouseup', endInteraction);
