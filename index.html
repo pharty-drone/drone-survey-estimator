@@ -1,26 +1,27 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Roof Inspection Tool Demo</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.css" rel="stylesheet">
   <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.0/mapbox-gl-draw.css" rel="stylesheet">
+
   <style>
     html,body {height:100%;margin:0}
     #map {position:absolute;inset:0}
-    .hud {
-      position:absolute;left:12px;bottom:12px;
-      background:rgba(255,255,255,.92);backdrop-filter:saturate(120%) blur(6px);
-      border-radius:10px;padding:10px 12px;font:14px/1.4 system-ui, sans-serif;
-      box-shadow:0 6px 20px rgba(0,0,0,.12)
-    }
     .toolbar {
       position:absolute;left:12px;top:12px;display:flex;gap:8px;
-      background:rgba(255,255,255,.92);border-radius:10px;padding:8px 10px
+      background:rgba(255,255,255,.92);border-radius:10px;padding:8px 10px;
+      font:14px system-ui,sans-serif
     }
     .btn {border:0;background:#111;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer}
     .btn.alt {background:#e6e6e6;color:#111}
+    .hud {
+      position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.92);
+      border-radius:10px;padding:10px 12px;font:14px/1.4 system-ui,sans-serif
+    }
     .badge {display:inline-block;min-width:72px;text-align:right}
   </style>
 </head>
@@ -39,14 +40,15 @@
   </div>
 
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
-  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.0/mapbox-gl-draw.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
   <script>
     mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
+
     const map = new mapboxgl.Map({
       container: 'map',
       style: 'mapbox://styles/mapbox/satellite-v9',
-      center: [-2.0, 53.6], // UK-ish
+      center: [-2.0, 53.6],  // UK-ish
       zoom: 16,
       pitch: 45,
       bearing: -17
@@ -67,38 +69,25 @@
 
     function updateArea() {
       const data = draw.getAll();
-      if (data.features.length) {
-        const areaM2 = turf.area(data);
-        const areaFt2 = areaM2 * 10.76391041671;
-        elM2.textContent = (Math.round(areaM2 * 100) / 100).toLocaleString();
-        elFt2.textContent = (Math.round(areaFt2 * 100) / 100).toLocaleString();
-
-        // Placeholder estimate; replace later
-        const baseCallout = 49;            // e.g. flat fee
-        const ratePerM2  = 0.45;           // e.g. variable
-        const estimate   = baseCallout + ratePerM2 * (areaM2 / 1); 
-        elEst.textContent = '£' + (Math.round(estimate * 100) / 100).toLocaleString();
-      } else {
-        elM2.textContent = '0';
-        elFt2.textContent = '0';
-        elEst.textContent = '–';
+      if (!data.features.length) {
+        elM2.textContent = '0'; elFt2.textContent = '0'; elEst.textContent = '–'; return;
       }
+      const areaM2 = turf.area(data);
+      const areaFt2 = areaM2 * 10.76391041671;
+      elM2.textContent = (Math.round(areaM2 * 100) / 100).toLocaleString();
+      elFt2.textContent = (Math.round(areaFt2 * 100) / 100).toLocaleString();
+
+      // Placeholder pricing (change later)
+      const estimate = 49 + 0.45 * areaM2; // base + per m²
+      elEst.textContent = '£' + (Math.round(estimate * 100) / 100).toLocaleString();
     }
 
     map.on('draw.create', updateArea);
     map.on('draw.update', updateArea);
     map.on('draw.delete', updateArea);
 
-    // Toolbar bindings (optional explicit buttons)
-    document.getElementById('draw-poly').addEventListener('click', () => {
-      draw.changeMode('draw_polygon');
-    });
-    document.getElementById('trash').addEventListener('click', () => {
-      const ids = draw.getAll().features.map(f => f.id);
-      ids.forEach(id => draw.delete(id));
-      updateArea();
-    });
+    document.getElementById('draw-poly').addEventListener('click', () => draw.changeMode('draw_polygon'));
+    document.getElementById('trash').addEventListener('click', () => { draw.deleteAll(); updateArea(); });
   </script>
 </body>
 </html>
-
