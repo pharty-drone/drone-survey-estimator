@@ -1,0 +1,13 @@
+.roof-map { position: relative; height: 70vh; min-height: 420px }
+.roof-toolbar {
+  position: relative; margin-top: 8px; display: inline-flex; gap: 8px;
+  background: rgba(255,255,255,.92); border-radius: 10px; padding: 8px 10px
+}
+.roof-hud {
+  margin-top: 8px; background: rgba(255,255,255,.92); border-radius: 10px; padding: 10px 12px;
+  font: 14px/1.4 system-ui, sans-serif; display: inline-block
+}
+.btn {border:0;background:#111;color:#fff;border-radius:8px;padding:8px 10px;cursor:pointer}
+.btn.alt {background:#e6e6e6;color:#111}
+.badge {display:inline-block;min-width:72px;text-align:right}
+
