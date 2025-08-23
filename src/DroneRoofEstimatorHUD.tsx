@@ -5,6 +5,7 @@ import { TerraDraw } from "@terradraw/core";
 import { TerraDrawMapLibreGLAdapter } from "@terradraw/maplibre-gl-adapter";
 import { TerraDrawPolygonMode, TerraDrawSelectMode } from "@terradraw/polygon";
 import * as turf from "@turf/turf";
+import PostcodeFinder from "./PostcodeFinder";
 
 // UI helpers (replace with your design system)
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export const DroneRoofEstimatorHUD: React.FC = () => {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const draw = useRef<TerraDraw | null>(null);
+  const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
 
   const [area, setArea] = useState(0);
   const [perimeter, setPerimeter] = useState(0);
@@ -45,6 +47,7 @@ export const DroneRoofEstimatorHUD: React.FC = () => {
       pitch: 45,
       antialias: true,
     });
+    setMapInstance(map.current);
 
     const adapter = new TerraDrawMapLibreGLAdapter({ map: map.current });
     draw.current = new TerraDraw({
@@ -91,6 +94,10 @@ export const DroneRoofEstimatorHUD: React.FC = () => {
   return (
     <div className="relative h-full w-full">
       <div ref={mapRef} className="h-full w-full" />
+      <PostcodeFinder
+        map={mapInstance}
+        className="absolute left-4 top-4 z-20"
+      />
 
       {/* bottom telemetry strip */}
       <div className="absolute bottom-0 left-0 right-0 flex items-center gap-4 bg-black/70 p-2 text-white">
