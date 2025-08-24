@@ -155,12 +155,62 @@
     const elArea = document.getElementById('area');
     const elEst = document.getElementById('estimate');
 
+    // camera & flight plan defaults for simple coverage planning
+    const camera = {
+      sensorWidthMm: 13.2,
+      sensorHeightMm: 8.8,
+      imageWidthPx: 4000,
+      imageHeightPx: 3000,
+      focalMm: 8.8,
+    };
+    const plan = {
+      altitudeM: 60,
+      frontOverlap: 0.7,
+      sideOverlap: 0.6,
+      gsMps: 12,
+      turnTimeSec: 5,
+      climbRate: 3,
+      descendRate: 4,
+    };
+
+    function coverageFrom(cam, p) {
+      const { sensorWidthMm, sensorHeightMm, focalMm, imageWidthPx, imageHeightPx } = cam;
+      const fx = (p.altitudeM * sensorWidthMm) / focalMm;
+      const fy = (p.altitudeM * sensorHeightMm) / focalMm;
+      const laneSpacing = fy * (1 - p.sideOverlap);
+      const triggerDist = fx * (1 - p.frontOverlap);
+      const photoRate = p.gsMps / Math.max(0.1, triggerDist);
+      const exposureGap = 1 / photoRate + (cam.trigLatencySec || 0);
+      return { fx, fy, laneSpacing, triggerDist, exposureGap };
+    }
+
+    function timeEstimateRect(Lm, Wm, cam, plan) {
+      const { laneSpacing, triggerDist } = coverageFrom(cam, plan);
+      const lanes = Math.ceil(Wm / laneSpacing);
+      const laneLen = Lm;
+      const surveyDist = lanes * laneLen;
+      const travelTime = surveyDist / plan.gsMps + (lanes - 1) * plan.turnTimeSec;
+      const photoCount = Math.ceil(laneLen / triggerDist) * lanes;
+      return {
+        lanes,
+        laneLen,
+        photoCount,
+        surveyTimeSec: travelTime,
+        approxMissionTimeSec:
+          travelTime + plan.altitudeM / plan.climbRate + plan.altitudeM / plan.descendRate,
+      };
+    }
+
     function updateMeasurements() {
       const data = draw.getAll();
       if (!data.features.length) {
         elPerimeter.textContent = 'Perimeter: – m';
         elArea.textContent = 'Area: – m²';
         elEst.textContent = '–';
+        if (map.getSource('survey-grid')) {
+          map.removeLayer('survey-grid-lines');
+          map.removeSource('survey-grid');
+        }
         return;
       }
       const polygon = data.features[0];
@@ -171,8 +221,36 @@
       elArea.textContent = `Area: ${areaM2.toLocaleString(undefined,{maximumFractionDigits:2})} m²`;
       elPerimeter.textContent = `Perimeter: ${perimeterM.toLocaleString(undefined,{maximumFractionDigits:2})} m`;
 
+      const bbox = turf.bbox(polygon);
+      const widthM = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[1]], {units:'meters'});
+      const heightM = turf.distance([bbox[0], bbox[1]], [bbox[0], bbox[3]], {units:'meters'});
+      const cov = coverageFrom(camera, plan);
+      const lanes = Math.max(1, Math.ceil(widthM / cov.laneSpacing));
+      const lines = [];
+      for (let i = 0; i < lanes; i++) {
+        const offset = i * cov.laneSpacing + cov.laneSpacing / 2;
+        const start = turf.destination([bbox[0], bbox[1]], offset, 90, {units:'meters'});
+        const end = turf.destination([bbox[0], bbox[3]], offset, 90, {units:'meters'});
+        lines.push(turf.lineString([start.geometry.coordinates, end.geometry.coordinates]));
+      }
+      const grid = turf.featureCollection(lines);
+      if (map.getSource('survey-grid')) {
+        map.getSource('survey-grid').setData(grid);
+      } else {
+        map.addSource('survey-grid', { type: 'geojson', data: grid });
+        map.addLayer({
+          id: 'survey-grid-lines',
+          type: 'line',
+          source: 'survey-grid',
+          paint: { 'line-color': '#00ffff', 'line-width': 2 }
+        });
+      }
+
+      const rect = timeEstimateRect(heightM, widthM, camera, plan);
       const estimate = 49 + 0.45 * areaM2; // example pricing
-      elEst.textContent = `£${estimate.toFixed(2)}`;
+      const mins = Math.round(rect.approxMissionTimeSec / 60);
+      const batteries = Math.max(1, Math.ceil(rect.approxMissionTimeSec / (20 * 60)));
+      elEst.textContent = `£${estimate.toFixed(2)} — ${rect.photoCount} photos, ${mins} min, ${batteries} batt.`;
     }
 
     map.on('draw.create', updateMeasurements);
